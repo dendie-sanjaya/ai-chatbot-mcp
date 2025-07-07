@@ -1,9 +1,9 @@
 import os
 from dotenv import load_dotenv
-from flask import Flask, request, jsonify, Response, stream_with_context # Added Response, stream_with_context
-from flask_cors import CORS # Untuk mengizinkan permintaan dari frontend
+from flask import Flask, request, jsonify, Response, stream_with_context
+from flask_cors import CORS
 import requests
-import json # Diperlukan untuk membungkus chunk streaming dalam JSON
+import json
 
 # LangChain imports
 from langchain_google_genai import ChatGoogleGenerativeAI
@@ -13,7 +13,7 @@ from langchain.schema.runnable import RunnablePassthrough, RunnableLambda
 from langchain_core.output_parsers import StrOutputParser
 
 app = Flask(__name__)
-CORS(app) # Aktifkan CORS untuk mengizinkan frontend di domain lain mengakses API ini
+CORS(app)
 
 # --- 0. Konfigurasi Lingkungan ---
 load_dotenv()
@@ -32,14 +32,15 @@ llm = ChatGoogleGenerativeAI(model="gemini-2.0-flash", temperature=0.7, google_a
 
 def fetch_external_data_from_rag(query: str) -> str:
     """
-    Memanggil MCP Server RAG untuk mendapatkan data eksternal dari MySQL.
+    Memanggil MCP Server RAG untuk mendapatkan data eksternal dari database.
     """
     print(f"DEBUG (Backend): Meminta data RAG untuk query: '{query}'")
     try:
-        response = requests.post(RAG_SERVER_URL, json={"query": query}, timeout=10) # Tambah timeout
+        response = requests.post(RAG_SERVER_URL, json={"query": query}, timeout=10)
         response.raise_for_status()
-        print(f"DEBUG (Backend): Data RAG yang diterima: {response.json()}")
-        return response.json().get("data", "Tidak ada data relevan ditemukan.")
+        rag_data = response.json().get("data", "Tidak ada data relevan ditemukan.")
+        print(f"DEBUG (Backend): Data RAG yang diterima: {rag_data}")
+        return rag_data
     except requests.exceptions.ConnectionError:
         return "Error: Tidak dapat terhubung ke server RAG. Pastikan MCP Server RAG berjalan."
     except requests.exceptions.RequestException as e:
@@ -51,7 +52,7 @@ def send_telegram_notification(message: str) -> str:
     """
     print(f"DEBUG (Backend): Mengirim notifikasi Telegram: '{message}'")
     try:
-        response = requests.post(TELEGRAM_NOTIFICATION_SERVER_URL, json={"message": message}, timeout=10) # Tambah timeout
+        response = requests.post(TELEGRAM_NOTIFICATION_SERVER_URL, json={"message": message}, timeout=10)
         response.raise_for_status()
         return response.json().get("status", "Notifikasi berhasil dikirim.")
     except requests.exceptions.ConnectionError:
@@ -75,20 +76,8 @@ RAG_QUERY_GENERATOR_PROMPT = PromptTemplate.from_template(
     Output: nama produk X
 
     Pertanyaan: Jelaskan produk A?
-    Output: NONE
-
-    Pertanyaan: Apa itu blockchain?
-    Output: NONE
-
-    Pertanyaan: Siapa nama penemu telepon?
-    Output: NONE
-
-    Pertanyaan: Halo, apa kabar?
-    Output: NONE
-
-    Pertanyaan: Bandung dimana?
-    Output: NONE
-
+    Output: detail produk A   
+    
     Pertanyaan: {question}
     Output: """
 )
@@ -96,11 +85,10 @@ RAG_QUERY_GENERATOR_PROMPT = PromptTemplate.from_template(
 CHAT_PROMPT = ChatPromptTemplate.from_messages(
     [
         SystemMessage(
-            "Anda adalah AI Chatbot yang membantu dan informatif. "
-            "Anda adalah seperti customer service yang sangat responsif dan informatif sebuah online shop. "
-            "Gunakan informasi dari CONTEXT jika relevan untuk menjawab pertanyaan. "
-            "Jika tidak ada CONTEXT yang relevan atau tidak cukup informasi, jawablah berdasarkan pengetahuan Anda."
-            "\n\nCONTEXT:\n{context}\n"
+            "Anda adalah AI Chatbot yang membantu dan informatif, bertindak sebagai customer service untuk online shop. "
+            "Tugas utama Anda adalah memberikan informasi yang akurat dan responsif. "
+            "Selalu berikan jawaban yang ramah dan membantu."
+            "\n\n--- CONTEXT START ---\n{context}\n--- CONTEXT END ---\n" # Menambahkan delimiter di sini
         ),
         HumanMessage(content="{question}"),
     ]
@@ -111,11 +99,10 @@ CHAT_PROMPT = ChatPromptTemplate.from_messages(
 rag_query_chain = RAG_QUERY_GENERATOR_PROMPT | llm | StrOutputParser()
 
 def get_rag_context(query: str) -> str:
-    print(f"DEBUG (Backend): rag_query_chain menghasilkan: '{query}'") # Tambahkan ini
+    print(f"DEBUG (Backend): rag_query_chain menghasilkan: '{query}'")
     if query.strip().lower() == "none":
         return "Tidak ada konteks eksternal yang dibutuhkan."
     return fetch_external_data_from_rag(query)
-
 
 chatbot_chain = (
     {
@@ -127,8 +114,8 @@ chatbot_chain = (
         "context": get_rag_context(x["rag_query"]),
     })
     | CHAT_PROMPT
-    | llm # Model LLM yang akan melakukan streaming
-    | StrOutputParser() # Parser untuk mengurai output string dari LLM
+    | llm
+    | StrOutputParser()
 )
 
 # --- 5. API Endpoint untuk Frontend ---
@@ -143,31 +130,20 @@ def chat():
 
     def generate():
         try:
-            # Panggil rantai chatbot LangChain dalam mode streaming
-            # StrOutputParser akan menghasilkan chunk dari string respons.
             for chunk in chatbot_chain.stream({"question": user_message}):
-                # Setiap chunk adalah bagian dari string.
-                # Kita membungkusnya dalam objek JSON dan mengirimkannya.
-                # Menggunakan '\n' sebagai delimiter antar objek JSON.
                 yield json.dumps({"response_chunk": chunk}) + '\n'
 
-            # Notifikasi Telegram akan dipicu setelah seluruh streaming selesai.
-            # Ini akan dikirim sebagai chunk terakhir atau setelah semua chunk respons dikirim.
             if "urgent" in user_message.lower() or "penting" in user_message.lower():
                 notification_status = send_telegram_notification(f"Pesan penting dari chatbot: {user_message}")
-                # Anda bisa mengirim status notifikasi sebagai chunk terpisah jika ingin frontend menampilkannya
                 yield json.dumps({"notification_status": notification_status}) + '\n'
 
         except Exception as e:
             print(f"[Backend] Error saat memproses pesan: {e}")
-            # Mengirim chunk error jika terjadi kesalahan selama streaming
             yield json.dumps({"error": f"Maaf, terjadi kesalahan internal pada chatbot: {e}"}) + '\n'
 
-    # Mengatur Content-Type ke application/json untuk streaming JSON.
-    # Frontend harus membaca respons sebagai stream JSON yang dipisahkan oleh newline.
     return Response(stream_with_context(generate()), mimetype='application/json')
 
 if __name__ == '__main__':
     print("Memulai App Backend Chatbot (Langchain Framework) di http://127.0.0.1:5000")
     print("Pastikan MCP Server RAG (port 5001) dan MCP Server Telegram (port 5002) berjalan.")
-    app.run(port=5000, debug=True) # debug=True hanya untuk pengembangan
+    app.run(port=5000, debug=True)
