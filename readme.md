@@ -1,11 +1,6 @@
 # Chatbot Customer Service - Combine AI LLM Gemin & SQL Database & Notification to Telegram with Concept MCP case
 
-
-Of course! Here's your text translated into clear and concise English, formatted in Markdown:
-
----
-
-## About This Project
+## About This Research
 
 This research presents a **smart chatbot solution** designed to automate customer interactions, specifically for **customer service in retail stores**. The chatbot leverages the power of **Google Gemini LLM** for natural language processing (NLP), combined with **SQL database integration** for contextual product information management, and **Telegram notification capabilities** for real-time alerts to staff or relevant users.
 
@@ -26,8 +21,6 @@ Developed with the **Model Context Protocol (MCP)** concept, this chatbot is des
 * **Optimal Performance (MCP):** Optimized for fast and efficient responses, ensuring a smooth user experience with minimal delay, even when interacting with the database.
 
 **When an MCP Server hosts AI Agents, it can be referred to as an Agentic AI system.**
-
----
 
 ## Case Study: Retail Store Customer Service
 
@@ -59,8 +52,6 @@ Video Demo  ![Video Demo - Chatbot](./ss/demo.mp4)
   * [5. Creating the MCP Server Notification Telegram]
   * [6. Creating the Chatbot Frontend Program]
 
-
------
 
 ## 1\. Create Gemini API Key
 
