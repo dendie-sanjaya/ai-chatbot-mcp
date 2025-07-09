@@ -111,21 +111,41 @@
             display: block;
             margin-top: 3px;
         }
-        /* CSS untuk efek mengetik */
-        .typing-indicator {
+        /* CSS untuk indikator menunggu (waiting) */
+        .waiting-indicator {
             display: inline-block;
             width: 10px;
             height: 10px;
             border-radius: 50%;
             background-color: #888;
             margin-left: 3px;
-            animation: bounce 0.8s infinite alternate;
+            animation: pulse 1.2s infinite ease-in-out;
         }
-        .typing-indicator:nth-child(2) { animation-delay: 0.1s; }
-        .typing-indicator:nth-child(3) { animation-delay: 0.2s; }
-        @keyframes bounce {
-            0% { transform: translateY(0); }
-            100% { transform: translateY(-5px); }
+        .waiting-indicator:nth-child(2) { animation-delay: 0.2s; }
+        .waiting-indicator:nth-child(3) { animation-delay: 0.4s; }
+        @keyframes pulse {
+            0%, 100% { transform: scale(0.8); opacity: 0.5; }
+            50% { transform: scale(1.2); opacity: 1; }
+        }
+
+        /* CSS untuk efek mengetik */
+        .typing-text-container {
+            display: inline; /* Agar teks dan kursor tetap sebaris */
+        }
+
+        /* Kursor mengetik */
+        .typing-cursor {
+            display: inline-block;
+            width: 2px;
+            height: 1.2em; /* Sesuaikan dengan tinggi font */
+            background-color: #333;
+            animation: blink 0.7s infinite;
+            vertical-align: middle; /* Sejajarkan dengan teks */
+            margin-left: 2px;
+        }
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0; }
         }
     </style>
 </head>
@@ -133,7 +153,7 @@
     <div id="chat-container">
         <div id="textbox">
             <div class="bot-response message initial-message">
-                <strong>Chatbot Gemini:</strong> Selamat datang! Saya adalah asisten yang siap membantu Anda. Ajukan pertanyaan tentang status perangkat atau informasi produk.
+                <strong>Chatbot Customer Service:</strong> Selamat datang! Saya adalah asisten yang siap membantu Anda. Ajukan pertanyaan tentang informasi produk.
                 <small class="timestamp">(${new Date().toLocaleString()})</small>
             </div>
         </div>
@@ -152,12 +172,12 @@
         const stopButton = document.getElementById('stop-button');
         const clearButton = document.getElementById('clear-button');
 
-        const chatApiUrl = 'http://127.0.0.1:5000/chat';
+        const chatApiUrl = 'http://localhost:5000/chat'; // Pastikan URL ini benar
 
         let isFetching = false;
         let controller = null;
-        let botResponseDiv = null; // Referensi ke div tempat respons bot streaming akan ditambahkan
-        let botResponseText = ''; // Mengakumulasi teks respons bot secara penuh
+        let typingInterval = null; // Untuk menyimpan referensi interval typing
+        let currentBotMessageElement = null; // Untuk referensi elemen pesan bot yang sedang ditampilkan
 
         sendButton.addEventListener('click', sendMessage);
         messageInput.addEventListener('keypress', function (event) {
@@ -178,26 +198,34 @@
             textbox.scrollTop = textbox.scrollHeight;
         }
 
-        // Fungsi untuk memulai kontainer respons bot baru dan indikator mengetik
-        function startBotResponse() {
-            botResponseDiv = document.createElement('div');
-            botResponseDiv.classList.add('message', 'bot-response');
-            // Menambahkan span untuk teks yang akan di-stream dan span untuk timestamp
-            botResponseDiv.innerHTML = `<strong>Chatbot Gemini:</strong> <span class="typing-text"></span><small class="timestamp"></small>`;
-            textbox.appendChild(botResponseDiv);
-            textbox.scrollTop = textbox.scrollHeight;
-            return botResponseDiv.querySelector('.typing-text'); // Mengembalikan referensi ke span teks
-        }
+        async function typeMessage(element, text) {
+            let i = 0;
+            const typingSpeed = 20; // Kecepatan mengetik dalam milidetik per karakter
 
-        // Fungsi untuk memperbarui timestamp setelah respons selesai
-        function updateBotTimestamp() {
-            if (botResponseDiv) {
-                const now = new Date();
-                const timestampSpan = botResponseDiv.querySelector('.timestamp');
-                if (timestampSpan) {
-                    timestampSpan.textContent = now.toLocaleString();
-                }
-            }
+            // Hapus HTML entities seperti &lt;br /&gt; atau &amp;amp;
+            const cleanText = text.replace(/<br\s*\/?>/gi, '\n').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#039;/g, "'");
+
+            return new Promise(resolve => {
+                typingInterval = setInterval(() => {
+                    if (i < cleanText.length) {
+                        // Periksa jika ada tag HTML, masukkan langsung
+                        const remainingText = cleanText.substring(i);
+                        const brMatch = remainingText.match(/^(\s*<br\s*\/?>)/i);
+                        if (brMatch) {
+                            element.innerHTML += brMatch[1]; // Tambahkan <br /> langsung
+                            i += brMatch[1].length;
+                        } else {
+                            element.textContent += cleanText.charAt(i);
+                            i++;
+                        }
+                        textbox.scrollTop = textbox.scrollHeight;
+                    } else {
+                        clearInterval(typingInterval);
+                        typingInterval = null;
+                        resolve();
+                    }
+                }, typingSpeed);
+            });
         }
 
         async function sendMessage() {
@@ -213,10 +241,12 @@
             controller = new AbortController();
             const signal = controller.signal;
 
-            const botTypingTextSpan = startBotResponse(); // Mulai div respons bot baru dengan efek mengetik
-            botResponseText = ''; // Reset akumulator teks respons bot
-
-            let buffer = ''; // Buffer untuk menampung data yang belum lengkap dari stream
+            // 1. Tampilkan indikator menunggu
+            const waitingIndicatorDiv = document.createElement('div');
+            waitingIndicatorDiv.classList.add('bot-response', 'message');
+            waitingIndicatorDiv.innerHTML = `<strong>Customer Service:</strong> Sedang mengetik<span class="waiting-indicator"></span><span class="waiting-indicator"></span><span class="waiting-indicator"></span>`;
+            textbox.appendChild(waitingIndicatorDiv);
+            textbox.scrollTop = textbox.scrollHeight;
 
             try {
                 const response = await fetch(chatApiUrl, {
@@ -228,8 +258,12 @@
                     signal: signal
                 });
 
+                // Hapus indikator menunggu
+                if (textbox.contains(waitingIndicatorDiv)) {
+                    textbox.removeChild(waitingIndicatorDiv);
+                }
+
                 if (!response.ok) {
-                    // Coba baca error sebagai JSON jika tersedia, jika tidak gunakan teks status
                     const errorText = await response.text();
                     let errorData = { error: `HTTP error! status: ${response.status}` };
                     try {
@@ -240,74 +274,53 @@
                     throw new Error(errorData.error || errorText || `HTTP error! status: ${response.status}`);
                 }
 
-                const reader = response.body.getReader();
-                const decoder = new TextDecoder('utf-8');
-                let done = false;
+                const data = await response.json(); // Menggunakan .json() karena responsnya JSON utuh
+                const botResponseContent = data.response || `_ (Maaf, terjadi kesalahan atau tidak ada respons.)_`;
 
-                while (!done) {
-                    const { value, done: readerDone } = await reader.read();
-                    done = readerDone;
-                    if (value) {
-                        buffer += decoder.decode(value, { stream: true }); // Tambahkan chunk ke buffer
-                        
-                        // Proses buffer baris per baris
-                        const lines = buffer.split('\n');
-                        // Sisakan baris terakhir di buffer jika tidak berakhir dengan newline
-                        buffer = lines.pop(); 
+                // 2. Buat elemen pesan bot baru dan mulai efek mengetik
+                botResponseDiv = document.createElement('div');
+                botResponseDiv.classList.add('message', 'bot-response');
+                // Tambahkan placeholder untuk teks yang akan diketik dan kursor
+                botResponseDiv.innerHTML = `<strong>Customer Service:</strong> <span class="typing-text-container"></span><span class="typing-cursor"></span><small class="timestamp"></small>`;
+                textbox.appendChild(botResponseDiv);
+                textbox.scrollTop = textbox.scrollHeight;
 
-                        for (const line of lines) {
-                            if (line.trim() === '') continue; // Lewati baris kosong
+                const typingTextSpan = botResponseDiv.querySelector('.typing-text-container');
+                const typingCursorSpan = botResponseDiv.querySelector('.typing-cursor');
 
-                            try {
-                                const parsed = JSON.parse(line);
-                                if (parsed.text) {
-                                    botResponseText += parsed.text;
-                                    botTypingTextSpan.textContent = botResponseText; // Perbarui teks
-                                } else if (parsed.error) {
-                                    botResponseText += `ERROR: ${parsed.error}`;
-                                    botTypingTextSpan.textContent = botResponseText;
-                                    done = true; // Hentikan pemrosesan saat error
-                                    break;
-                                }
-                                textbox.scrollTop = textbox.scrollHeight; // Tetap scroll ke bawah
-                            } catch (e) {
-                                console.warn('Tidak dapat mem-parsing baris JSON:', line, e);
-                                // Ini bisa terjadi jika ada baris JSON parsial atau konten non-JSON yang tidak terduga
-                                // Untuk streaming yang tangguh, pastikan backend mengirimkan baris JSON yang valid.
-                            }
-                        }
-                    }
-                }
-                // Pastikan untuk memproses sisa buffer setelah loop selesai (jika ada)
-                if (buffer.trim() !== '') {
-                    try {
-                        const parsed = JSON.parse(buffer);
-                        if (parsed.text) {
-                            botResponseText += parsed.text;
-                            botTypingTextSpan.textContent = botResponseText;
-                        } else if (parsed.error) {
-                            botResponseText += `ERROR: ${parsed.error}`;
-                            botTypingTextSpan.textContent = botResponseText;
-                        }
-                        textbox.scrollTop = textbox.scrollHeight;
-                    } catch (e) {
-                        console.warn('Tidak dapat mem-parsing sisa buffer sebagai JSON:', buffer, e);
-                    }
+                // Lakukan efek mengetik
+                await typeMessage(typingTextSpan, botResponseContent);
+
+                // Setelah mengetik selesai, sembunyikan kursor
+                if (typingCursorSpan) {
+                    typingCursorSpan.style.display = 'none';
                 }
 
-                updateBotTimestamp(); // Perbarui timestamp setelah respons penuh diterima
+                // Perbarui timestamp
+                const timestampSpan = botResponseDiv.querySelector('.timestamp');
+                if (timestampSpan) {
+                    timestampSpan.textContent = new Date().toLocaleString();
+                }
 
             } catch (error) {
+                // Pastikan indikator menunggu dihapus bahkan saat terjadi error
+                if (textbox.contains(waitingIndicatorDiv)) {
+                    textbox.removeChild(waitingIndicatorDiv);
+                }
+                
+                // Hentikan efek mengetik jika sedang berjalan
+                if (typingInterval) {
+                    clearInterval(typingInterval);
+                    typingInterval = null;
+                }
+
                 if (error.name === 'AbortError') {
-                    botResponseText += '_ (Permintaan dihentikan oleh Anda.)_';
-                    botTypingTextSpan.textContent = botResponseText;
+                    appendBotResponse('_ (Permintaan dihentikan oleh Anda.)_');
                     console.log('Fetch aborted by user.');
                 } else {
                     console.error('Error fetching from backend:', error);
-                    botResponseText += `_ (Maaf, terjadi kesalahan: ${error.message}.)_`;
-                    botTypingTextSpan.textContent = botResponseText;
+                    appendBotResponse(`_ (Maaf, terjadi kesalahan: ${error.message}.)_`);
                 }
-                updateBotTimestamp(); // Perbarui timestamp meskipun ada error
             } finally {
                 isFetching = false;
                 sendButton.disabled = false;
@@ -320,12 +333,35 @@
             if (controller) {
                 controller.abort();
             }
+            // Hentikan efek mengetik jika tombol stop ditekan
+            if (typingInterval) {
+                clearInterval(typingInterval);
+                typingInterval = null;
+                // Jika pesan bot sudah mulai diketik, tampilkan sisa teksnya
+                if (currentBotMessageElement && currentBotMessageElement.querySelector('.typing-text-container')) {
+                    const typingTextSpan = currentBotMessageElement.querySelector('.typing-text-container');
+                    const originalText = typingTextSpan.getAttribute('data-full-text');
+                    if (originalText) {
+                         // Bersihkan konten saat ini dan masukkan seluruh teks
+                        typingTextSpan.textContent = ''; 
+                        typingTextSpan.innerHTML = originalText; // Gunakan innerHTML untuk memparsing <br />
+                    }
+                    const typingCursorSpan = currentBotMessageElement.querySelector('.typing-cursor');
+                    if (typingCursorSpan) {
+                        typingCursorSpan.style.display = 'none';
+                    }
+                    const timestampSpan = currentBotMessageElement.querySelector('.timestamp');
+                    if (timestampSpan) {
+                        timestampSpan.textContent = new Date().toLocaleString();
+                    }
+                }
+            }
         }
 
         function clearChatHistory() {
             textbox.innerHTML = `
                 <div class="bot-response message initial-message">
-                    <strong>Chatbot Gemini:</strong> Selamat datang! Saya adalah asisten yang siap membantu Anda. Ajukan pertanyaan tentang status perangkat atau informasi produk.
+                    <strong>Chatbot Customer Service:</strong> Selamat datang! Saya adalah asisten yang siap membantu Anda. Ajukan pertanyaan tentang informasi produk.
                     <small class="timestamp">${new Date().toLocaleString()}</small>
                 </div>
             `;
