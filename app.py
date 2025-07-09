@@ -229,9 +229,9 @@ def chat():
                 notification_message = f"Data RAG yang diminta: {rag_data_for_telegram}"
                 notification_status = send_telegram_notification(notification_message)
                 # Tambahkan status notifikasi ke respons chatbot
-                final_response = f"{chatbot_response}\n\nStatus Notifikasi Telegram: {notification_status}"
+                final_response = f"{chatbot_response} <br /><br />Status Notifikasi Telegram: {notification_status}"
             else:
-                final_response = f"{chatbot_response}\n\nTidak ada data RAG yang relevan untuk dikirim ke Telegram atau terjadi error saat mengambil data."
+                final_response = f"{chatbot_response} <br /><br />Tidak ada data RAG yang relevan untuk dikirim ke Telegram atau terjadi error saat mengambil data."
         else:
             final_response = chatbot_response
 
