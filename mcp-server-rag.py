@@ -60,7 +60,7 @@ def init_db():
     products = cursor.fetchall()
     if products:
         for p_id, product_code, name, price, stock, description in products:
-            print(f"ID: {p_id}, Kode Produk: {product_code}, Nama: {name}, Harga: ${price:.2f}, Stok: {stock}, Deskripsi: {description}")
+            print(f"ID: {p_id}, Kode Produk: {product_code}, Nama: {name}, Harga: Rp.{price:.2f}, Stok: {stock}, Deskripsi: {description}")
     else:
         print("Tidak ada data produk.")
     # --- Akhir Bagian Tampilkan Data Sampel ---
@@ -121,7 +121,7 @@ def rag_query():
         cursor.execute("SELECT name, price FROM products WHERE LOWER(name) LIKE ? OR LOWER(product_code) LIKE ?", ('%' + product_search_term + '%', '%' + product_search_term + '%',))
         result = cursor.fetchone()
         if result:
-            found_data = f"Harga {result[0]} adalah ${result[1]:.2f}."
+            found_data = f"Harga {result[0]} adalah Rp.{result[1]:.0f} "
     
     elif tipe == "stok":
         print("[RAG Server] Mencari informasi stok.") # Debug print
@@ -148,7 +148,7 @@ def rag_query():
             found_data = (
                 f"Informasi Produk: {result[0]}. "
                 f"Deskripsi: {result[1]}. "
-                f"Harga: ${result[2]:.2f}. "
+                f"Harga: Rp. {result[2]:.2f}. "
                 f"Stok: {result[3]} unit."
             )
 
