@@ -1,4 +1,4 @@
-# Chatbot Customer Service - Combine AI LLM Gemin & SQL Database & Notification to Telegram with Concept MCP case
+# Chatbot Customer Service - Combine AI LLM Gemini & SQL Database & Notification to Telegram with Concept MCP case
 
 ## About This Research
 
